@@ -1,13 +1,17 @@
 FROM centos:centos7
 MAINTAINER Jan Garaj info@monitoringartist.com
 
-# ZABBIX_VERSION= trunk tags/2.4.6 branches/dev/ZBXNEXT-1263-1
+# ZABBIX_VERSION=trunk tags/3.0.1 branches/dev/ZBXNEXT-1263-1
 
 ENV \
-  ZABBIX_VERSION=trunk \
+  ZABBIX_VERSION=tags/3.0.1 \
+  ZS_enabled=true \
+  ZA_enabled=true \
+  ZW_enabled=true \
+  SNMPTRAP_enabled=false \
   STATUS_PAGE_ALLOWED_IP=127.0.0.1 \
-  JAVA_HOME=/usr/lib/jvm/java-1.8.0-openjdk/bin/java \
-  JAVA=/usr/lib/jvm/java-1.8.0-openjdk/bin/java \
+  JAVA_HOME=/usr/lib/jvm/jre \
+  JAVA=/usr/bin/java \
   PHP_date_timezone=UTC \
   PHP_max_execution_time=300 \
   PHP_max_input_time=300 \
@@ -77,6 +81,52 @@ ENV \
   ZS_SSLCALocation="" \
   ZS_LoadModulePath=/usr/lib/zabbix/modules \
   ZS_LoadModule="" \
+  ZS_TLSCAFile="" \
+  ZS_TLSCRLFile="" \
+  ZS_TLSCertFile="" \
+  ZS_TLSKeyFile="" \
+  ZW_ZBX_SERVER=localhost \
+  ZW_ZBX_SERVER_PORT=10051 \
+  ZW_ZBX_SERVER_NAME="Zabbix Server" \
+  ZA_PidFile=/tmp/zabbix_agentd.pid \
+  ZA_LogType=console \
+  ZA_LogFile=/tmp/zabbix_agentd.log \
+  ZA_LogFileSize=1 \
+  ZA_DebugLevel=3 \
+  ZA_SourceIP="" \
+  ZA_EnableRemoteCommands=0 \
+  ZA_LogRemoteCommands=0 \
+  ZA_Server=127.0.0.1 \
+  ZA_ListenPort=10050 \
+  ZA_ListenIP=0.0.0.0 \
+  ZA_StartAgents=3 \
+  ZA_ServerActive=127.0.0.1 \
+  ZA_Hostname="Zabbix server" \
+  ZA_HostnameItem= \
+  ZA_HostMetadata="" \
+  ZA_HostMetadataItem="" \
+  ZA_RefreshActiveChecks=120 \
+  ZA_BufferSend=5 \
+  ZA_BufferSize=100 \
+  ZA_MaxLinesPerSecond=20 \
+  ZA_Timeout=3 \
+  ZA_AllowRoot=0 \
+  ZA_User=zabbix \
+  ZA_Include="" \
+  ZA_UnsafeUserParameters=0 \
+  ZA_UserParameter="" \
+  ZA_LoadModulePath="" \
+  ZA_LoadModule="" \
+  ZA_TLSConnect=unencrypted \
+  ZA_TLSAccept=unencrypted \
+  ZA_TLSCAFile="" \
+  ZA_TLSCRLFile="" \
+  ZA_TLSServerCertIssuer="" \
+  ZA_TLSServerCertSubject="" \
+  ZA_TLSCertFile="" \
+  ZA_TLSKeyFile="" \
+  ZA_TLSPSKIdentity="" \
+  ZA_TLSPSKFile="" \
   TERM=xterm
 
 # Layer: base
@@ -118,10 +168,10 @@ RUN \
               java-1.8.0-openjdk-devel mariadb-devel libxml2-devel gettext \
               libcurl-devel OpenIPMI-devel mysql iksemel-devel libssh2-devel \
               unixODBC unixODBC-devel mysql-connector-odbc postgresql-odbc \
-              openldap-devel net-tools snmptt sudo rubygems && \
+              openldap-devel telnet net-tools snmptt sudo rubygems && \
  `# reinstall glibc for locales` \
   yum -y -q reinstall glibc-common && \
-  cp /usr/local/etc/zabbix_agend.conf /tmp && \
+  cp /usr/local/etc/zabbix_agentd.conf /tmp && \
   svn co svn://svn.zabbix.com/${ZABBIX_VERSION} /usr/local/src/zabbix && \
   cd /usr/local/src/zabbix && \
   DATE=`date +%Y-%m-%d` && \
@@ -132,11 +182,12 @@ RUN \
   ./configure --enable-server --enable-agent --with-mysql --enable-java \
               --with-net-snmp --with-libcurl --with-libxml2 --with-openipmi \
               --enable-ipv6 --with-jabber --with-openssl --with-ssh2 \
-              --with-ldap  --with-unixodbc && \
+              --with-ldap --with-unixodbc && \
   make dbschema && \
   gem install sass && \
   make css && \
   make install && \
+  mv /health/ /usr/local/src/zabbix/frontends/php/ && \
   cp /usr/local/etc/web/zabbix.conf.php /usr/local/src/zabbix/frontends/php/conf/ && \
   pip install py-zabbix && \
   wget https://github.com/schweikert/fping/archive/3.10.tar.gz && \
@@ -151,25 +202,33 @@ RUN \
   chmod 4710 /usr/sbin/fping && \
   chmod 4710 /usr/sbin/fping6 && \
   cd .. && \
-  cp -f /tmp/zabbix_agend.conf /usr/local/etc/ && \
+  cp -f /tmp/zabbix_agentd.conf /usr/local/etc/ && \
   rm -rf fping-3.10 && \
   rm -rf 3.10.tar.gz && \
   cd /usr/local/src/zabbix/frontends/php && \
   locale/make_mo.sh && \
   yum autoremove -y gettext python-pip tar svn gcc automake mariadb-devel \
                     java-1.8.0-openjdk-devel libxml2-devel libcurl-devel \
-                    OpenIPMI-devel iksemel-devel rubygems && \
+                    OpenIPMI-devel iksemel-devel rubygems kernel-headers && \
   yum install -y OpenIPMI-libs && \
   chmod +x /config/bootstrap.sh && \
   chmod +x /config/ds.sh && \
+  chmod +x /usr/local/src/zabbix/misc/snmptrap/zabbix_trap_receiver.pl && \
+  chmod +x /usr/share/snmptt/snmptthandler-embedded && \
+  sed -i -e "s/Defaults    requiretty.*/ #Defaults    requiretty/g" /etc/sudoers && \
   yum clean all && \
   mkdir -p /usr/local/share/ssl/certs && \
   mkdir -p /usr/local/share/ssl/keys && \
   mkdir -p /usr/lib/zabbix/modules && \
+  mkdir -p /etc/zabbix/snmp/mibs && \
+  rm -rf /usr/local/src/zabbix/[a,A,b,c,C,i,I,m,M,n,N,r,R,s,t,u,r,\.]* /usr/local/src/zabbix/depcomp /usr/local/src/zabbix/.svn && \
+  rm -rf /usr/local/src/zabbix/database/[i,M,o,p,s]* && \
   rm -rf /tmp/*
+
+  # TODO apply http://geofrogger.net/review/snmptt-hide-generic-part.patch
 
 CMD ["/config/bootstrap.sh"]
 
-VOLUME ["/etc/custom-config/", "/usr/local/share/zabbix/externalscripts", "/usr/local/share/zabbix/ssl/certs", "/usr/local/share/zabbix/ssl/keys", "/usr/lib/zabbix/modules"]
+VOLUME ["/etc/custom-config", "/usr/local/share/zabbix/externalscripts", "/usr/local/share/zabbix/ssl/certs", "/usr/local/share/zabbix/ssl/keys", "/usr/lib/zabbix/modules", "/usr/share/snmp/mibs", "/etc/snmp"]
 
-EXPOSE 10051 10052 80
+EXPOSE 80 162/udp 10051 10052
